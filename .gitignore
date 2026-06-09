@@ -1,0 +1,6 @@
+node_modules/
+dist/
+target/
+build.log
+*.apk
+.DS_Store
