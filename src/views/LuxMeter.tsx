@@ -12,6 +12,7 @@ export default function LuxMeter({ onBack }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const rafRef = useRef<number>(0);
 
   // Intentar Sensor Nativo
   useEffect(() => {
@@ -39,25 +40,39 @@ export default function LuxMeter({ onBack }: Props) {
     }
 
     return () => {
-      if (sensor) sensor.stop();
+      try {
+        if (sensor) sensor.stop();
+      } catch {
+        // el sensor pudo no haberse iniciado
+      }
       stopCamera();
     };
   }, []);
 
   const startCameraFallback = async () => {
-    setSensorType("camera");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError("Este dispositivo/WebView no soporta cámara ni sensor de luz.");
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
         audio: false,
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => {
-            videoRef.current?.play();
-            processCameraFrame();
-        };
+      setSensorType("camera");
+
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        // Analizar recién cuando el video tenga frames reales.
+        video.onplaying = () => processCameraFrame();
+        await video.play().catch((err) => {
+          console.warn("No se pudo iniciar el video:", err);
+        });
+        // Respaldo por si onplaying ya ocurrió antes de asignarlo.
+        if (video.readyState >= 2) processCameraFrame();
       }
     } catch (err) {
       console.error("Camera fallback failed:", err);
@@ -66,14 +81,18 @@ export default function LuxMeter({ onBack }: Props) {
   };
 
   const stopCamera = () => {
+    cancelAnimationFrame(rafRef.current);
+    if (videoRef.current) {
+      videoRef.current.onplaying = null;
+      videoRef.current.srcObject = null;
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
     }
   };
 
   const processCameraFrame = () => {
-    if (sensorType !== "camera") return;
-    
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
@@ -81,36 +100,43 @@ export default function LuxMeter({ onBack }: Props) {
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
 
+    cancelAnimationFrame(rafRef.current);
+
     const analyze = () => {
-      if (video.paused || video.ended) return;
-      
-      // Dibujar miniatura para procesar
+      if (!streamRef.current?.active) return;
+
+      // Si todavía no hay frame decodificado, reintentamos.
+      if (video.readyState < 2 || video.videoWidth === 0) {
+        rafRef.current = requestAnimationFrame(analyze);
+        return;
+      }
+
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const data = imageData.data;
-      
+
       let totalLuminance = 0;
       for (let i = 0; i < data.length; i += 4) {
         const r = data[i];
         const g = data[i + 1];
         const b = data[i + 2];
         // Luminosidad percibida (fórmula estándar)
-        totalLuminance += (0.299 * r + 0.587 * g + 0.114 * b);
+        totalLuminance += 0.299 * r + 0.587 * g + 0.114 * b;
       }
-      
+
       const avgLuminance = totalLuminance / (data.length / 4);
-      
-      // Mapeo experimental de Brillo (0-255) a Lux (0-~1000)
-      // Usamos una curva cuadrática para simular la sensibilidad a la luz
+
+      // Mapeo experimental de Brillo (0-255) a Lux (0-~1000).
+      // Es una estimación referencial, no una medición lux real.
       const estimatedLux = Math.pow(avgLuminance / 255, 2) * 1000;
       setLux(Math.round(estimatedLux));
 
       if (streamRef.current?.active) {
-        requestAnimationFrame(analyze);
+        rafRef.current = requestAnimationFrame(analyze);
       }
     };
 
-    analyze();
+    rafRef.current = requestAnimationFrame(analyze);
   };
 
   const getLightInfo = (l: number) => {
@@ -198,7 +224,20 @@ export default function LuxMeter({ onBack }: Props) {
       </div>
 
       {/* Elementos Ocultos para Fallback */}
-      <video ref={videoRef} playsInline muted style={{ display: "none" }} />
+      <video
+        ref={videoRef}
+        playsInline
+        muted
+        style={{
+          position: "absolute",
+          width: "2px",
+          height: "2px",
+          opacity: 0.01,
+          pointerEvents: "none",
+          left: "-10px",
+          top: "-10px",
+        }}
+      />
       <canvas ref={canvasRef} width="64" height="64" style={{ display: "none" }} />
 
       {/* Decoración sutil: Brillo */}

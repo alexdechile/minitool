@@ -3,4 +3,5 @@ dist/
 target/
 build.log
 *.apk
+*.idsig
 .DS_Store

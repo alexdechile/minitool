@@ -1,0 +1,36 @@
+schema: spec-driven
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+context: |
+  SensoLab is a mobile-first Tauri v2 desktop/mobile app: a pocket toolkit of
+  sensor tools (color lens, decibel meter, surveyor, seismograph, lux meter and
+  photo assistant). Frontend is React 19 + TypeScript + Vite (npm). Backend is
+  Rust (src-tauri, Cargo workspace) with Tauri plugins (fs, opener, share,
+  sharekit). Views live in src/views/*.tsx and routing is a simple state switch
+  in src/App.tsx. UI is iOS-style with Glassmorphism (src/App.css). The app is
+  also built for Android via `tauri android build` (APK). Build with `npm run
+  build`. No test suite yet.
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing

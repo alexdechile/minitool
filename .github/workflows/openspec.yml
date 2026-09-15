@@ -1,0 +1,46 @@
+name: OpenSpec
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openspec-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate changes & specs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install OpenSpec CLI
+        run: npm install -g @fission-ai/openspec@latest
+
+      - name: Validate all OpenSpec artifacts
+        run: openspec validate --all
+
+      - name: Check in-flight changes are well-formed
+        run: |
+          for dir in openspec/changes/*/; do
+            [ -d "$dir" ] || continue
+            echo "Validating $dir"
+            openspec validate "$(basename "$dir")"
+          done
+        shell: bash

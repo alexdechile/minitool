@@ -30,6 +30,7 @@ export default function PhotoAssistant({ onBack }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const rafRef = useRef<number>(0);
 
   // --- Lógica de Cálculo de Exposición ---
   const calculateExposure = useCallback((currentLux: number, currentMode: PhotoMode): Exposure => {
@@ -116,12 +117,14 @@ export default function PhotoAssistant({ onBack }: Props) {
       });
 
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => {
-            videoRef.current?.play();
-            processCameraFrame();
-        };
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        video.onplaying = () => processCameraFrame();
+        await video.play().catch((err) => {
+          console.warn("No se pudo iniciar el video:", err);
+        });
+        if (video.readyState >= 2) processCameraFrame();
       }
     } catch (err) { setError("No hay sensor de luz disponible."); }
   };
@@ -148,7 +151,15 @@ export default function PhotoAssistant({ onBack }: Props) {
   }, []);
 
   const stopCamera = () => {
-    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+    cancelAnimationFrame(rafRef.current);
+    if (videoRef.current) {
+      videoRef.current.onplaying = null;
+      videoRef.current.srcObject = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
   };
 
   const processCameraFrame = () => {
@@ -158,17 +169,22 @@ export default function PhotoAssistant({ onBack }: Props) {
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
 
+    cancelAnimationFrame(rafRef.current);
     const analyze = () => {
-      if (video.paused || video.ended) return;
+      if (!streamRef.current?.active) return;
+      if (video.readyState < 2 || video.videoWidth === 0) {
+        rafRef.current = requestAnimationFrame(analyze);
+        return;
+      }
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
       let lum = 0;
       for (let i = 0; i < data.length; i += 4) lum += (0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2]);
       const avg = lum / (data.length / 4);
       setLux(Math.pow(avg / 255, 2) * 1000); // Estimación referencial
-      if (streamRef.current?.active) requestAnimationFrame(analyze);
+      if (streamRef.current?.active) rafRef.current = requestAnimationFrame(analyze);
     };
-    analyze();
+    rafRef.current = requestAnimationFrame(analyze);
   };
 
   return (
@@ -252,7 +268,20 @@ export default function PhotoAssistant({ onBack }: Props) {
         <ModeBtn active={mode === "sports"} onClick={() => setMode("sports")} label="🏃" sub="SPRT" />
       </div>
 
-      <video ref={videoRef} playsInline muted style={{ display: "none" }} />
+      <video
+        ref={videoRef}
+        playsInline
+        muted
+        style={{
+          position: "absolute",
+          width: "2px",
+          height: "2px",
+          opacity: 0.01,
+          pointerEvents: "none",
+          left: "-10px",
+          top: "-10px",
+        }}
+      />
       <canvas ref={canvasRef} width="64" height="64" style={{ display: "none" }} />
     </div>
   );

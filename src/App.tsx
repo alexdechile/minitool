@@ -19,20 +19,6 @@ function App() {
 
   const handleBack = () => setView("hub");
 
-  // Pre-solicitar permisos al inicio para mejorar la experiencia
-  useState(() => {
-    const requestInitialPermissions = async () => {
-      try {
-        // Esto disparará los diálogos del sistema en Android
-        await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        // Si llegamos aquí, los permisos están dados o al menos el diálogo se mostró
-      } catch (err) {
-        console.warn("Permisos iniciales no otorgados:", err);
-      }
-    };
-    requestInitialPermissions();
-  });
-
   return (
     <div className="app-container">
       {view === "hub" ? (

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 
 interface Props {
   onBack: () => void;
@@ -13,8 +13,11 @@ interface GPSData {
 
 interface OrientationData {
   heading: number | null;
-  pitch: number | null;
+  beta: number | null;
+  gamma: number | null;
 }
+
+type TiltMode = "vertical" | "horizontal";
 
 export default function Surveyor({ onBack }: Props) {
   const [gps, setGps] = useState<GPSData>({
@@ -26,12 +29,18 @@ export default function Surveyor({ onBack }: Props) {
 
   const [orientation, setOrientation] = useState<OrientationData>({
     heading: null,
-    pitch: null,
+    beta: null,
+    gamma: null,
   });
 
+  const [tiltMode, setTiltMode] = useState<TiltMode>("vertical");
+  const [zeroOffset, setZeroOffset] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [permissionRequested, setPermissionRequested] = useState(false);
   const [isFrozen, setIsFrozen] = useState(false);
+
+  // Evita que los eventos relativos pisen a los absolutos.
+  const receivedAbsoluteRef = useRef(false);
 
   // Setup GPS
   useEffect(() => {
@@ -58,15 +67,17 @@ export default function Surveyor({ onBack }: Props) {
   }, [isFrozen]);
 
   const handleRequestPermission = useCallback(async () => {
-    // Para iOS 13+
-    if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+    // En iOS 13+ DeviceOrientationEvent pide permiso explícito.
+    // En Android/WebView simplemente no existe y seguimos directo.
+    const DOE = (window as any).DeviceOrientationEvent;
+    if (DOE && typeof DOE.requestPermission === "function") {
       try {
-        const response = await (DeviceOrientationEvent as any).requestPermission();
-        if (response !== 'granted') {
+        const response = await DOE.requestPermission();
+        if (response !== "granted") {
           setError("Permiso de orientación denegado");
         }
-      } catch (err) {
-        setError("Error solicitando permisos");
+      } catch {
+        setError("Error solicitando permisos de orientación");
       }
     }
     setPermissionRequested(true);
@@ -77,19 +88,55 @@ export default function Surveyor({ onBack }: Props) {
 
     const handleOrientation = (e: DeviceOrientationEvent) => {
       let heading = e.alpha;
-      if ((e as any).webkitCompassHeading) {
+      if ((e as any).webkitCompassHeading != null) {
         heading = (e as any).webkitCompassHeading;
       }
 
       setOrientation({
-        heading: heading,
-        pitch: e.beta,
+        heading,
+        beta: e.beta,
+        gamma: e.gamma,
       });
     };
 
-    window.addEventListener("deviceorientation", handleOrientation, true);
-    return () => window.removeEventListener("deviceorientation", handleOrientation, true);
+    const handleAbsolute = (e: DeviceOrientationEvent) => {
+      receivedAbsoluteRef.current = true;
+      handleOrientation(e);
+    };
+
+    const handleRelative = (e: DeviceOrientationEvent) => {
+      if (receivedAbsoluteRef.current) return;
+      handleOrientation(e);
+    };
+
+    window.addEventListener("deviceorientationabsolute", handleAbsolute, true);
+    window.addEventListener("deviceorientation", handleRelative, true);
+    return () => {
+      window.removeEventListener("deviceorientationabsolute", handleAbsolute, true);
+      window.removeEventListener("deviceorientation", handleRelative, true);
+    };
   }, [permissionRequested, isFrozen]);
+
+  // Al cambiar de modo, el cero anterior deja de tener sentido.
+  useEffect(() => {
+    setZeroOffset(0);
+  }, [tiltMode]);
+
+  const tiltValue = useMemo(() => {
+    if (orientation.beta === null) return null;
+
+    if (tiltMode === "vertical") {
+      // Teléfono de canto / pantalla al frente: 90° = vertical perfecta.
+      return 90 - orientation.beta;
+    }
+
+    // Teléfono plano: inclinación del plano respecto a la horizontal.
+    const b = (orientation.beta * Math.PI) / 180;
+    const g = ((orientation.gamma ?? 0) * Math.PI) / 180;
+    return (Math.acos(Math.cos(b) * Math.cos(g)) * 180) / Math.PI;
+  }, [orientation, tiltMode]);
+
+  const tiltDisplay = tiltValue === null ? null : tiltValue - zeroOffset;
 
   const getHeadingName = (deg: number | null) => {
     if (deg === null) return "--";
@@ -104,6 +151,8 @@ export default function Surveyor({ onBack }: Props) {
     if (d >= 292.5 && d < 337.5) return "NO";
     return "--";
   };
+
+  const horizonOffset = tiltDisplay === null ? 0 : Math.max(-25, Math.min(25, tiltDisplay * 0.5));
 
   return (
     <div style={{
@@ -226,7 +275,7 @@ export default function Surveyor({ onBack }: Props) {
               border: "2px solid #00FF41",
               borderRadius: "50%",
               position: "relative",
-              transform: `rotate(${- (orientation.heading || 0)}deg)`,
+              transform: `rotate(${-(orientation.heading ?? 0)}deg)`,
               transition: "transform 0.1s linear",
             }}>
               <div style={{
@@ -252,15 +301,67 @@ export default function Surveyor({ onBack }: Props) {
           {/* Sección Inclinómetro */}
           <div style={{ border: "1px solid #00FF41", padding: "15px", position: "relative" }}>
             <span style={{ position: "absolute", top: "-10px", left: "10px", background: "#0A0A0A", padding: "0 5px", fontSize: "12px" }}>
-              INCLINÓMETRO_PITCH
+              INCLINÓMETRO
             </span>
+
+            {/* Selector de posición del teléfono */}
+            <div style={{ display: "flex", gap: "8px", marginBottom: "12px", flexWrap: "wrap" }}>
+              <button
+                onClick={() => setTiltMode("vertical")}
+                style={{
+                  background: tiltMode === "vertical" ? "#00FF41" : "none",
+                  color: tiltMode === "vertical" ? "#0A0A0A" : "#00FF41",
+                  border: "1px solid #00FF41",
+                  padding: "5px 12px",
+                  cursor: "pointer",
+                  fontSize: "11px",
+                  fontWeight: "bold",
+                }}
+              >
+                VERTICAL
+              </button>
+              <button
+                onClick={() => setTiltMode("horizontal")}
+                style={{
+                  background: tiltMode === "horizontal" ? "#00FF41" : "none",
+                  color: tiltMode === "horizontal" ? "#0A0A0A" : "#00FF41",
+                  border: "1px solid #00FF41",
+                  padding: "5px 12px",
+                  cursor: "pointer",
+                  fontSize: "11px",
+                  fontWeight: "bold",
+                }}
+              >
+                HORIZONTAL
+              </button>
+              <button
+                onClick={() => setZeroOffset(tiltValue ?? 0)}
+                style={{
+                  marginLeft: "auto",
+                  background: "#FFB000",
+                  color: "#0A0A0A",
+                  border: "none",
+                  padding: "5px 12px",
+                  cursor: "pointer",
+                  fontSize: "11px",
+                  fontWeight: "bold",
+                }}
+              >
+                CERO
+              </button>
+            </div>
+
             <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
                <div style={{ flex: 1 }}>
                   <div style={{ color: "#008F11", fontSize: "10px" }}>PENDIENTE</div>
                   <div style={{ fontSize: "48px", color: "#00FF41", fontWeight: "bold" }}>
-                    {orientation.pitch !== null ? `${Math.abs(Math.round(orientation.pitch - 90))}°` : "---"}
+                    {tiltDisplay !== null ? `${tiltDisplay > 0 ? "+" : ""}${Math.round(tiltDisplay)}°` : "---"}
                   </div>
-                  <div style={{ color: "#8B8B8B", fontSize: "12px" }}>Ángulo relativo a vertical</div>
+                  <div style={{ color: "#8B8B8B", fontSize: "12px" }}>
+                    {tiltMode === "vertical"
+                      ? "Teléfono de canto / pantalla al frente"
+                      : "Teléfono plano sobre la superficie"}
+                  </div>
                </div>
                {/* Horizonte Artificial */}
                <div style={{
@@ -278,7 +379,7 @@ export default function Surveyor({ onBack }: Props) {
                    width: "200%",
                    height: "1px",
                    background: "#00FF41",
-                   transform: `translateY(${((orientation.pitch || 90) - 90) * 0.5}px)`,
+                   transform: `translateY(${horizonOffset}px)`,
                    boxShadow: "0 0 10px #00FF41",
                  }} />
                  <div style={{

@@ -58,6 +58,7 @@ export default function DecibelMeter({ onBack }: Props) {
   const streamRef = useRef<MediaStream | null>(null);
   const animFrameRef = useRef<number>(0);
   const updateCountRef = useRef(0);
+  const listeningRef = useRef(false);
 
   const updateDb = useCallback(() => {
     if (!analyserRef.current) return;
@@ -85,9 +86,18 @@ export default function DecibelMeter({ onBack }: Props) {
   }, [calibrationOffset]);
 
   const startListening = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      alert("Este dispositivo/WebView no soporta acceso al micrófono.");
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const audioCtx = new AudioContext();
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const audioCtx = new AudioCtx();
+      if (audioCtx.state === "suspended") {
+        await audioCtx.resume();
+      }
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 2048;
@@ -109,26 +119,36 @@ export default function DecibelMeter({ onBack }: Props) {
     }
   };
 
-  const stopListening = () => {
+  const cleanupAudio = useCallback(() => {
     cancelAnimationFrame(animFrameRef.current);
 
     streamRef.current?.getTracks().forEach((t) => t.stop());
-    audioCtxRef.current?.close();
+    // close() puede rechazar si el contexto ya estaba cerrado
+    audioCtxRef.current?.close().catch(() => {});
 
     streamRef.current = null;
     audioCtxRef.current = null;
     analyserRef.current = null;
     sourceRef.current = null;
+  }, []);
 
+  const stopListening = useCallback(() => {
+    cleanupAudio();
+    listeningRef.current = false;
     setIsListening(false);
-  };
+  }, [cleanupAudio]);
 
+  // Mantener el ref sincronizado para poder limpiar al desmontar
+  useEffect(() => {
+    listeningRef.current = isListening;
+  }, [isListening]);
+
+  // Cleanup real al salir de la vista, sin depender de un estado capturado
   useEffect(() => {
     return () => {
-      if (isListening) stopListening();
+      if (listeningRef.current) cleanupAudio();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [cleanupAudio]);
 
   const handleCalibrate = () => {
     const refValue = parseFloat(calibInput);

@@ -22,13 +22,14 @@ export default function Seismograph({ onBack }: Props) {
 
   // Request Permission
   const handleRequestPermission = useCallback(async () => {
-    if (typeof (DeviceMotionEvent as any).requestPermission === "function") {
+    const DME = (window as any).DeviceMotionEvent;
+    if (DME && typeof DME.requestPermission === "function") {
       try {
-        const response = await (DeviceMotionEvent as any).requestPermission();
+        const response = await DME.requestPermission();
         if (response !== "granted") {
           setError("Permiso denegado");
         }
-      } catch (err) {
+      } catch {
         setError("Error solicitando permisos");
       }
     }
