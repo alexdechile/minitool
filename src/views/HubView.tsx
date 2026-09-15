@@ -34,6 +34,13 @@ const apps: AppCard[] = [
     gradient: "linear-gradient(135deg, #1A1A1A, #333333)",
   },
   {
+    id: "magnetronomo",
+    name: "Magnetrónomo",
+    subtitle: "Mide el campo magnético",
+    icon: "🧲",
+    gradient: "linear-gradient(135deg, #C5D0E2, #D4C5E2)",
+  },
+  {
     id: "seismograph",
     name: "Sismógrafo",
     subtitle: "Detector de vibraciones",
