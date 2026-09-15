@@ -65,7 +65,30 @@ jobs:
         with:
           projectPath: ./src-tauri
           mobile: android
-          args: --apk --debug
+          args: --apk
+
+      - name: Sign APK
+        env:
+          APK_KEYSTORE_BASE64: ${{ secrets.APK_KEYSTORE_BASE64 }}
+          APK_KEYSTORE_PASS: ${{ secrets.APK_KEYSTORE_PASS }}
+          APK_KEY_PASS: ${{ secrets.APK_KEY_PASS }}
+          APK_KEY_ALIAS: ${{ secrets.APK_KEY_ALIAS }}
+        run: |
+          set -euxo pipefail
+          UNSIGNED=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release-unsigned.apk' | head -1)
+          test -n "$UNSIGNED" || { echo "unsigned apk not found"; exit 1; }
+          echo "unsigned apk: $UNSIGNED"
+          BT=$(find "$ANDROID_HOME/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -1)
+          echo "$APK_KEYSTORE_BASE64" | base64 -d > /tmp/apksign.jks
+          "$BT/zipalign" -f 4 "$UNSIGNED" /tmp/aligned.apk
+          "$BT/apksigner" sign \
+            --ks /tmp/apksign.jks \
+            --ks-pass "env:APK_KEYSTORE_PASS" \
+            --key-pass "env:APK_KEY_PASS" \
+            --ks-key-alias "$APK_KEY_ALIAS" \
+            --out src-tauri/gen/android/app/build/outputs/apk/SensoLab-release.apk \
+            /tmp/aligned.apk
+          "$BT/apksigner" verify --print-certs src-tauri/gen/android/app/build/outputs/apk/SensoLab-release.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
