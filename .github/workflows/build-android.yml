@@ -69,23 +69,20 @@ jobs:
 
       - name: Sign APK
         env:
-          APK_KEYSTORE_BASE64: ${{ secrets.APK_KEYSTORE_BASE64 }}
-          APK_KEYSTORE_PASS: ${{ secrets.APK_KEYSTORE_PASS }}
-          APK_KEY_PASS: ${{ secrets.APK_KEY_PASS }}
-          APK_KEY_ALIAS: ${{ secrets.APK_KEY_ALIAS }}
+          APK_SIGNING_KEY: ${{ secrets.APK_SIGNING_KEY }}
+          APK_SIGNING_CERT: ${{ secrets.APK_SIGNING_CERT }}
         run: |
           set -euxo pipefail
           UNSIGNED=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release-unsigned.apk' | head -1)
           test -n "$UNSIGNED" || { echo "unsigned apk not found"; exit 1; }
           echo "unsigned apk: $UNSIGNED"
           BT=$(find "$ANDROID_HOME/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -1)
-          echo "$APK_KEYSTORE_BASE64" | base64 -d > /tmp/apksign.jks
+          echo "$APK_SIGNING_KEY" | base64 -d > /tmp/sign-key.pk8
+          echo "$APK_SIGNING_CERT" | base64 -d > /tmp/sign-cert.x509
           "$BT/zipalign" -f 4 "$UNSIGNED" /tmp/aligned.apk
           "$BT/apksigner" sign \
-            --ks /tmp/apksign.jks \
-            --ks-pass "env:APK_KEYSTORE_PASS" \
-            --key-pass "env:APK_KEY_PASS" \
-            --ks-key-alias "$APK_KEY_ALIAS" \
+            --key /tmp/sign-key.pk8 \
+            --cert /tmp/sign-cert.x509 \
             --out src-tauri/gen/android/app/build/outputs/apk/SensoLab-release.apk \
             /tmp/aligned.apk
           "$BT/apksigner" verify --print-certs src-tauri/gen/android/app/build/outputs/apk/SensoLab-release.apk
