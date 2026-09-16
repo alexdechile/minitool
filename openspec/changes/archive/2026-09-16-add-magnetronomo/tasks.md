@@ -25,5 +25,5 @@
 ## 5. Verificación
 
 - [x] 5.1 `npm run build` pasa sin errores de TypeScript
-- [ ] 5.2 Probar en navegador desktop: se muestra "sensor no disponible" y los controles de grabación quedan deshabilitados
-- [ ] 5.3 Probar en Android: lectura de magnetómetro o fallback heading, cronómetro, gráfica y exportación
+- [x] 5.2 Probar en navegador desktop: se muestra "sensor no disponible" y los controles de grabación quedan deshabilitados
+- [x] 5.3 Probar en Android: lectura de magnetómetro o fallback heading, cronómetro, gráfica y exportación
